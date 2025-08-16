@@ -1,11 +1,11 @@
-FROM rust:1.76-slim-bookworm
+FROM rust:latest-slim-bookworm
 
 WORKDIR /app
 
 COPY Cargo.toml ./
 COPY Cargo.lock ./
 
-RUN mkdir src/ \ 
+RUN mkdir src/ \
     && echo "fn main() {println!(\"Hello\");}" > src/main.rs \
     && cargo build --release \
     && rm -rf src/target
