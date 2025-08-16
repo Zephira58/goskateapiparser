@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use regex::{Regex, escape};
+use std::collections::HashMap;
 
 pub fn get_item_keywords() -> HashMap<String, Vec<Regex>> {
     let mut map = HashMap::new();
@@ -18,7 +18,10 @@ pub fn get_item_keywords() -> HashMap<String, Vec<Regex>> {
         ("Bug Queens", vec!["Bug Queens"]),
         ("Cherry Swift", vec!["Cherry Swift"]),
         ("Death Squad", vec!["Death Squad", "ds"]),
-        ("Pink Tie Dye", vec!["Pink Tie Dye", "pink tye dye", "pink dye"]),
+        (
+            "Pink Tie Dye",
+            vec!["Pink Tie Dye", "pink tye dye", "pink dye"],
+        ),
         ("Bug Websites", vec!["Bug Websites"]),
         ("Cherry Blues", vec!["Cherry Blues"]),
         ("Masked", vec!["Masked"]),
@@ -90,7 +93,8 @@ pub fn get_item_keywords() -> HashMap<String, Vec<Regex>> {
     ];
 
     for (item_name, keywords) in item_map_data {
-        let regexes: Vec<Regex> = keywords.into_iter()
+        let regexes: Vec<Regex> = keywords
+            .into_iter()
             .map(|kw| Regex::new(&format!(r"(?i)\b{}\b", escape(kw))).unwrap())
             .collect();
         map.insert(item_name.to_string(), regexes);

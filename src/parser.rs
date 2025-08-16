@@ -1,13 +1,13 @@
 // src/parser.rs
 
+use chrono::{DateTime, Duration, FixedOffset, Utc};
 use csv::ReaderBuilder;
-use chrono::{DateTime, FixedOffset, Duration, Utc};
 use regex::{Regex, escape};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::time::Instant;
-use serde::{Serialize, Deserialize};
 
 use crate::items;
 
@@ -78,9 +78,7 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
     let file = File::open(file_path)?;
     let reader = BufReader::new(file);
 
-    let mut rdr = ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(reader);
+    let mut rdr = ReaderBuilder::new().has_headers(true).from_reader(reader);
 
     let mut item_data: HashMap<String, ItemStats> = HashMap::new();
     let mut all_trade_dates: Vec<DateTime<FixedOffset>> = Vec::new();
@@ -106,7 +104,7 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             Ok(dt) => {
                 all_trade_dates.push(dt);
                 dt
-            },
+            }
             Err(_) => continue,
         };
 
@@ -160,13 +158,16 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
     let overall_parsing_time = start_time.elapsed();
 
     all_trade_dates.sort();
-    
+
     let earliest_message_utc_epoch = all_trade_dates.first().map(|dt| dt.timestamp());
     let latest_message_utc_epoch = all_trade_dates.last().map(|dt| dt.timestamp());
     let parser_run_utc_epoch = Utc::now().timestamp();
 
     let total_duration = if all_trade_dates.len() > 1 {
-        all_trade_dates.last().unwrap().signed_duration_since(*all_trade_dates.first().unwrap())
+        all_trade_dates
+            .last()
+            .unwrap()
+            .signed_duration_since(*all_trade_dates.first().unwrap())
     } else {
         Duration::zero()
     };
@@ -196,7 +197,11 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             let mut prices = a.1.prices.clone();
             prices.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
             let mid = prices.len() / 2;
-            if prices.len() % 2 == 0 { (prices[mid - 1] + prices[mid]) / 2.0 } else { prices[mid] }
+            if prices.len() % 2 == 0 {
+                (prices[mid - 1] + prices[mid]) / 2.0
+            } else {
+                prices[mid]
+            }
         } else {
             0.0
         };
@@ -204,15 +209,23 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             let mut prices = b.1.prices.clone();
             prices.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
             let mid = prices.len() / 2;
-            if prices.len() % 2 == 0 { (prices[mid - 1] + prices[mid]) / 2.0 } else { prices[mid] }
+            if prices.len() % 2 == 0 {
+                (prices[mid - 1] + prices[mid]) / 2.0
+            } else {
+                prices[mid]
+            }
         } else {
             0.0
         };
-        median_b.partial_cmp(&median_a).unwrap_or(std::cmp::Ordering::Equal)
+        median_b
+            .partial_cmp(&median_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     for (item_name, mut stats) in sorted_item_data {
-        stats.prices.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        stats
+            .prices
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let median_price = if stats.prices.is_empty() {
             None
@@ -240,7 +253,7 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
         } else {
             0.0
         };
-        
+
         let frequency_str = if total_posts > 0 && total_days > 0.0 {
             let trades_per_day = total_posts as f64 / total_days;
             if trades_per_day >= 1.0 {
@@ -248,7 +261,7 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             } else if trades_per_day * 7.0 >= 1.0 {
                 format!("{:.2} times/week", trades_per_day * 7.0)
             } else if trades_per_day * 30.44 >= 1.0 {
-                 format!("{:.2} times/month", trades_per_day * 30.44)
+                format!("{:.2} times/month", trades_per_day * 30.44)
             } else {
                 format!("Once every {:.0} days", 1.0 / trades_per_day)
             }
