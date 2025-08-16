@@ -1,13 +1,13 @@
 // src/parser.rs
 
-use chrono::{DateTime, Duration, FixedOffset, Utc};
-use csv::ReaderBuilder;
+use chrono::{DateTime, FixedOffset, Duration, Utc};
 use regex::{Regex, escape};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::time::Instant;
+use serde::{Serialize, Deserialize};
+use csv::ReaderBuilder;
 
 use crate::items;
 
@@ -72,29 +72,72 @@ struct AnalysisOutput {
     items: Vec<ItemAnalysis>,
 }
 
-pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, Box<dyn std::error::Error>> {
+    if is_verbose {
+        println!("\n--- Starting Trade Analysis ---\n");
+    }
     let start_time = Instant::now();
 
-    let file = File::open(file_path)?;
+    if is_verbose {
+        println!("Attempting to open CSV file: '{}'", file_path);
+    }
+    let file = File::open(file_path);
+    let file = match file {
+        Ok(f) => {
+            if is_verbose {
+                println!("Successfully opened CSV file.");
+            }
+            f
+        },
+        Err(e) => {
+            eprintln!("ERROR: Could not open file '{}': {}", file_path, e);
+            return Err(Box::new(e));
+        }
+    };
     let reader = BufReader::new(file);
 
-    let mut rdr = ReaderBuilder::new().has_headers(true).from_reader(reader);
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(reader);
 
     let mut item_data: HashMap<String, ItemStats> = HashMap::new();
     let mut all_trade_dates: Vec<DateTime<FixedOffset>> = Vec::new();
+    let mut processed_records_count = 0;
+    let mut skipped_records_count = 0;
 
+    if is_verbose {
+        println!("Loading item keywords...");
+    }
     let item_keywords = items::get_item_keywords();
+    if is_verbose {
+        println!("Item keywords loaded successfully.");
+    }
 
     let price_regex = Regex::new(r"(\d[\d\.]*[kK]?|\d[\d,\.]*)").unwrap();
     let sell_regex = Regex::new(r"(?i)\b(sell|selling|wts)\b").unwrap();
     let buy_regex = Regex::new(r"(?i)\b(buy|buying|wtb)\b").unwrap();
 
-    for result in rdr.deserialize() {
-        let record: TradeRecord = result?;
+    if is_verbose {
+        println!("Starting to deserialize and process CSV records...");
+    }
+    for (i, result) in rdr.deserialize().enumerate() {
+        let record: TradeRecord = match result {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("WARNING: Skipping malformed record on line {}: {}", i + 2, e);
+                skipped_records_count += 1;
+                continue;
+            }
+        };
+        processed_records_count += 1;
 
         let content = if let Some(c) = record.content {
             c
         } else {
+            if is_verbose {
+                println!("Skipping record {} (Author: {}): Missing content.", i + 2, record.author);
+            }
+            skipped_records_count += 1;
             continue;
         };
         let content_lower = content.to_lowercase();
@@ -104,8 +147,14 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             Ok(dt) => {
                 all_trade_dates.push(dt);
                 dt
-            }
-            Err(_) => continue,
+            },
+            Err(_) => {
+                if is_verbose {
+                    println!("Skipping record {} (Author: {}): Unparseable date format '{}'.", i + 2, record.author, record.date);
+                }
+                skipped_records_count += 1;
+                continue;
+            },
         };
 
         let mut found_item_name: Option<String> = None;
@@ -123,7 +172,13 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
 
         let item_name = match found_item_name {
             Some(name) => name,
-            None => continue,
+            None => {
+                if is_verbose {
+                    println!("Skipping record {} (Author: {}): No identifiable item found in content.", i + 2, record.author);
+                }
+                skipped_records_count += 1;
+                continue;
+            },
         };
 
         let price_str = price_regex.find(&content_lower);
@@ -141,7 +196,13 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
 
         let price_val = match price {
             Some(p) => p,
-            None => continue,
+            None => {
+                if is_verbose {
+                    println!("Skipping record {} (Author: {}): No valid price found for item '{}'.", i + 2, record.author, item_name);
+                }
+                skipped_records_count += 1;
+                continue;
+            },
         };
 
         let stats = item_data.entry(item_name).or_default();
@@ -154,20 +215,20 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             stats.demand_posts += 1;
         }
     }
+    if is_verbose {
+        println!("Finished processing {} records ({} skipped).", processed_records_count, skipped_records_count);
+    }
 
     let overall_parsing_time = start_time.elapsed();
 
     all_trade_dates.sort();
-
+    
     let earliest_message_utc_epoch = all_trade_dates.first().map(|dt| dt.timestamp());
     let latest_message_utc_epoch = all_trade_dates.last().map(|dt| dt.timestamp());
     let parser_run_utc_epoch = Utc::now().timestamp();
 
     let total_duration = if all_trade_dates.len() > 1 {
-        all_trade_dates
-            .last()
-            .unwrap()
-            .signed_duration_since(*all_trade_dates.first().unwrap())
+        all_trade_dates.last().unwrap().signed_duration_since(*all_trade_dates.first().unwrap())
     } else {
         Duration::zero()
     };
@@ -175,8 +236,10 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
     let total_weeks = total_duration.num_weeks() as f64;
     let total_months = total_days / 30.44;
 
-    let data_display_period = if total_duration.num_seconds() == 0 {
-        "Less than a day".to_string()
+    let data_display_period = if all_trade_dates.is_empty() {
+        "No data available".to_string()
+    } else if total_duration.num_seconds() == 0 {
+        "Less than a day (or only one record)".to_string()
     } else if total_months >= 1.0 {
         let months = total_duration.num_days() / 30;
         let remaining_days = total_duration.num_days() % 30;
@@ -189,6 +252,13 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
         format!("{:.0} days", total_days)
     };
 
+    if all_trade_dates.is_empty() {
+        println!("\nWARNING: No valid trade data found after parsing. Output will contain no item analysis.");
+    }
+
+    if is_verbose {
+        println!("\nAggregating and sorting item data...");
+    }
     let mut results: Vec<ItemAnalysis> = Vec::new();
 
     let mut sorted_item_data: Vec<(String, ItemStats)> = item_data.into_iter().collect();
@@ -197,11 +267,7 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             let mut prices = a.1.prices.clone();
             prices.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
             let mid = prices.len() / 2;
-            if prices.len() % 2 == 0 {
-                (prices[mid - 1] + prices[mid]) / 2.0
-            } else {
-                prices[mid]
-            }
+            if prices.len() % 2 == 0 { (prices[mid - 1] + prices[mid]) / 2.0 } else { prices[mid] }
         } else {
             0.0
         };
@@ -209,23 +275,15 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             let mut prices = b.1.prices.clone();
             prices.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
             let mid = prices.len() / 2;
-            if prices.len() % 2 == 0 {
-                (prices[mid - 1] + prices[mid]) / 2.0
-            } else {
-                prices[mid]
-            }
+            if prices.len() % 2 == 0 { (prices[mid - 1] + prices[mid]) / 2.0 } else { prices[mid] }
         } else {
             0.0
         };
-        median_b
-            .partial_cmp(&median_a)
-            .unwrap_or(std::cmp::Ordering::Equal)
+        median_b.partial_cmp(&median_a).unwrap_or(std::cmp::Ordering::Equal)
     });
 
     for (item_name, mut stats) in sorted_item_data {
-        stats
-            .prices
-            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        stats.prices.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let median_price = if stats.prices.is_empty() {
             None
@@ -253,7 +311,7 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
         } else {
             0.0
         };
-
+        
         let frequency_str = if total_posts > 0 && total_days > 0.0 {
             let trades_per_day = total_posts as f64 / total_days;
             if trades_per_day >= 1.0 {
@@ -261,7 +319,7 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             } else if trades_per_day * 7.0 >= 1.0 {
                 format!("{:.2} times/week", trades_per_day * 7.0)
             } else if trades_per_day * 30.44 >= 1.0 {
-                format!("{:.2} times/month", trades_per_day * 30.44)
+                 format!("{:.2} times/month", trades_per_day * 30.44)
             } else {
                 format!("Once every {:.0} days", 1.0 / trades_per_day)
             }
@@ -287,8 +345,10 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
             rough_selling_frequency: frequency_str,
         });
     }
+    if is_verbose {
+        println!("Item data aggregation complete.");
+    }
 
-    // Now, create the metadata string manually with comments
     let metadata_comments = format!(
         "# Trade Analysis Metadata\n\
         # ------------------------\n\
@@ -316,8 +376,16 @@ pub fn run_trade_analysis(file_path: &str) -> Result<String, Box<dyn std::error:
         items: results,
     };
 
+    if is_verbose {
+        println!("Serializing results to YAML format...");
+    }
     let yaml_items_output = serde_yaml::to_string(&final_output_struct)?;
+    if is_verbose {
+        println!("YAML serialization complete.");
+    }
 
-    // Combine comments and the YAML output for items
+    if is_verbose {
+        println!("\n--- Trade Analysis Complete ---");
+    }
     Ok(format!("{}{}", metadata_comments, yaml_items_output))
 }

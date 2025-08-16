@@ -1,20 +1,16 @@
-FROM rust:latest-slim-bookworm
-
+FROM rustlang/rust:nightly AS builder
 WORKDIR /app
-
-COPY Cargo.toml ./
-COPY Cargo.lock ./
-
-RUN mkdir src/ \
-    && echo "fn main() {println!(\"Hello\");}" > src/main.rs \
-    && cargo build --release \
-    && rm -rf src/target
-
-COPY src/ ./src/
-
-RUN mkdir -p src/data/
-COPY src/data/tradexport_1755362248.csv src/data/tradexport_1755362248.csv
-
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release || true
+RUN rm -rf src
+COPY src ./src
 RUN cargo build --release
 
-CMD ["./target/release/goskateapi"]
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /app/target/release/goskateapi /app/goskateapi
+COPY estimate.yaml /app/
+COPY src/data /app/data
+CMD ["./goskateapi"]
