@@ -1,13 +1,13 @@
 // src/parser.rs
 
-use chrono::{DateTime, FixedOffset, Duration, Utc};
+use chrono::{DateTime, Duration, FixedOffset, Utc};
+use csv::ReaderBuilder;
 use regex::{Regex, escape};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::time::Instant;
-use serde::{Serialize, Deserialize};
-use csv::ReaderBuilder;
 
 use crate::items;
 
@@ -72,7 +72,10 @@ struct AnalysisOutput {
     items: Vec<ItemAnalysis>,
 }
 
-pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, Box<dyn std::error::Error>> {
+pub fn run_trade_analysis(
+    file_path: &str,
+    is_verbose: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
     if is_verbose {
         println!("\n--- Starting Trade Analysis ---\n");
     }
@@ -88,7 +91,7 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
                 println!("Successfully opened CSV file.");
             }
             f
-        },
+        }
         Err(e) => {
             eprintln!("ERROR: Could not open file '{}': {}", file_path, e);
             return Err(Box::new(e));
@@ -96,9 +99,7 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
     };
     let reader = BufReader::new(file);
 
-    let mut rdr = ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(reader);
+    let mut rdr = ReaderBuilder::new().has_headers(true).from_reader(reader);
 
     let mut item_data: HashMap<String, ItemStats> = HashMap::new();
     let mut all_trade_dates: Vec<DateTime<FixedOffset>> = Vec::new();
@@ -124,7 +125,11 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
         let record: TradeRecord = match result {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("WARNING: Skipping malformed record on line {}: {}", i + 2, e);
+                eprintln!(
+                    "WARNING: Skipping malformed record on line {}: {}",
+                    i + 2,
+                    e
+                );
                 skipped_records_count += 1;
                 continue;
             }
@@ -135,7 +140,11 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
             c
         } else {
             if is_verbose {
-                println!("Skipping record {} (Author: {}): Missing content.", i + 2, record.author);
+                println!(
+                    "Skipping record {} (Author: {}): Missing content.",
+                    i + 2,
+                    record.author
+                );
             }
             skipped_records_count += 1;
             continue;
@@ -147,14 +156,19 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
             Ok(dt) => {
                 all_trade_dates.push(dt);
                 dt
-            },
+            }
             Err(_) => {
                 if is_verbose {
-                    println!("Skipping record {} (Author: {}): Unparseable date format '{}'.", i + 2, record.author, record.date);
+                    println!(
+                        "Skipping record {} (Author: {}): Unparseable date format '{}'.",
+                        i + 2,
+                        record.author,
+                        record.date
+                    );
                 }
                 skipped_records_count += 1;
                 continue;
-            },
+            }
         };
 
         let mut found_item_name: Option<String> = None;
@@ -174,11 +188,15 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
             Some(name) => name,
             None => {
                 if is_verbose {
-                    println!("Skipping record {} (Author: {}): No identifiable item found in content.", i + 2, record.author);
+                    println!(
+                        "Skipping record {} (Author: {}): No identifiable item found in content.",
+                        i + 2,
+                        record.author
+                    );
                 }
                 skipped_records_count += 1;
                 continue;
-            },
+            }
         };
 
         let price_str = price_regex.find(&content_lower);
@@ -198,11 +216,16 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
             Some(p) => p,
             None => {
                 if is_verbose {
-                    println!("Skipping record {} (Author: {}): No valid price found for item '{}'.", i + 2, record.author, item_name);
+                    println!(
+                        "Skipping record {} (Author: {}): No valid price found for item '{}'.",
+                        i + 2,
+                        record.author,
+                        item_name
+                    );
                 }
                 skipped_records_count += 1;
                 continue;
-            },
+            }
         };
 
         let stats = item_data.entry(item_name).or_default();
@@ -216,19 +239,25 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
         }
     }
     if is_verbose {
-        println!("Finished processing {} records ({} skipped).", processed_records_count, skipped_records_count);
+        println!(
+            "Finished processing {} records ({} skipped).",
+            processed_records_count, skipped_records_count
+        );
     }
 
     let overall_parsing_time = start_time.elapsed();
 
     all_trade_dates.sort();
-    
+
     let earliest_message_utc_epoch = all_trade_dates.first().map(|dt| dt.timestamp());
     let latest_message_utc_epoch = all_trade_dates.last().map(|dt| dt.timestamp());
     let parser_run_utc_epoch = Utc::now().timestamp();
 
     let total_duration = if all_trade_dates.len() > 1 {
-        all_trade_dates.last().unwrap().signed_duration_since(*all_trade_dates.first().unwrap())
+        all_trade_dates
+            .last()
+            .unwrap()
+            .signed_duration_since(*all_trade_dates.first().unwrap())
     } else {
         Duration::zero()
     };
@@ -253,7 +282,9 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
     };
 
     if all_trade_dates.is_empty() {
-        println!("\nWARNING: No valid trade data found after parsing. Output will contain no item analysis.");
+        println!(
+            "\nWARNING: No valid trade data found after parsing. Output will contain no item analysis."
+        );
     }
 
     if is_verbose {
@@ -267,7 +298,11 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
             let mut prices = a.1.prices.clone();
             prices.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
             let mid = prices.len() / 2;
-            if prices.len() % 2 == 0 { (prices[mid - 1] + prices[mid]) / 2.0 } else { prices[mid] }
+            if prices.len() % 2 == 0 {
+                (prices[mid - 1] + prices[mid]) / 2.0
+            } else {
+                prices[mid]
+            }
         } else {
             0.0
         };
@@ -275,15 +310,23 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
             let mut prices = b.1.prices.clone();
             prices.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
             let mid = prices.len() / 2;
-            if prices.len() % 2 == 0 { (prices[mid - 1] + prices[mid]) / 2.0 } else { prices[mid] }
+            if prices.len() % 2 == 0 {
+                (prices[mid - 1] + prices[mid]) / 2.0
+            } else {
+                prices[mid]
+            }
         } else {
             0.0
         };
-        median_b.partial_cmp(&median_a).unwrap_or(std::cmp::Ordering::Equal)
+        median_b
+            .partial_cmp(&median_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     for (item_name, mut stats) in sorted_item_data {
-        stats.prices.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        stats
+            .prices
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let median_price = if stats.prices.is_empty() {
             None
@@ -311,7 +354,7 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
         } else {
             0.0
         };
-        
+
         let frequency_str = if total_posts > 0 && total_days > 0.0 {
             let trades_per_day = total_posts as f64 / total_days;
             if trades_per_day >= 1.0 {
@@ -319,7 +362,7 @@ pub fn run_trade_analysis(file_path: &str, is_verbose: bool) -> Result<String, B
             } else if trades_per_day * 7.0 >= 1.0 {
                 format!("{:.2} times/week", trades_per_day * 7.0)
             } else if trades_per_day * 30.44 >= 1.0 {
-                 format!("{:.2} times/month", trades_per_day * 30.44)
+                format!("{:.2} times/month", trades_per_day * 30.44)
             } else {
                 format!("Once every {:.0} days", 1.0 / trades_per_day)
             }
