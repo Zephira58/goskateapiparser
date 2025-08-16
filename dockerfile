@@ -13,7 +13,7 @@ RUN mkdir src/ \
 COPY src/ ./src/
 
 RUN mkdir -p src/data/
-COPY tradexport_1755362248.csv src/data/tradexport_1755362248.csv
+COPY src/data/tradexport_1755362248.csv src/data/tradexport_1755362248.csv
 
 RUN cargo build --release
 
