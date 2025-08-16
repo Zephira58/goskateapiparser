@@ -1,9 +1,9 @@
 [package]
-name = "goskateapi"
+name = "goskateapiparser"
 version = "0.1.0"
 edition = "2024"
 license = "GNU General Public License v3.0"
-repository = "https://github.com/Zephira58/goskateapi"
+repository = "https://github.com/Zephira58/goskateapiparser"
 authors = ["Zephria58 <zephira58@protonmail.com>"]
 
 readme = "README.md"
