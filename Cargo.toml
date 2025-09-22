@@ -14,7 +14,7 @@ publish = false
 csv = "1.3.1"
 chrono = { version = "0.4.41", features = ["serde"] }
 regex = "1.11.1"
-serde = { version = "1.0.219", features = ["derive"] }
+serde = { version = "1.0.226", features = ["derive"] }
 serde_yaml = "0.9.33"
 
 [profile.release]
