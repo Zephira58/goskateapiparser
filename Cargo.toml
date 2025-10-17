@@ -13,7 +13,7 @@ publish = false
 [dependencies]
 csv = "1.4.0"
 chrono = { version = "0.4.41", features = ["serde"] }
-regex = "1.11.1"
+regex = "1.12.2"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_yaml = "0.9.33"
 
